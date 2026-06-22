@@ -11,7 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, ListState, Paragraph},
 };
 
-use crate::ui::{SELECTED_STYLE, sidebar};
+use crate::ui::{HIGHLIGHT_STYLE, body_style, border_style, sidebar, title_style};
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
     ui::block,
@@ -138,7 +138,7 @@ impl GenresState {
             .split(area);
 
         let title = Paragraph::new("Select a Genre")
-            .style(SELECTED_STYLE)
+            .style(title_style())
             .alignment(Alignment::Center);
 
         frame.render_widget(title, chunks[0]);
@@ -164,17 +164,15 @@ impl GenresState {
                     let is_selected = genre_idx == self.selected_genre;
 
                     let style = if is_selected {
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD)
+                        HIGHLIGHT_STYLE
                     } else {
-                        Style::default().fg(Color::White)
+                        body_style()
                     };
 
                     let border_style = if is_selected {
-                        Style::default().fg(Color::Cyan)
+                        Style::default().add_modifier(Modifier::BOLD)
                     } else {
-                        Style::default().fg(Color::DarkGray)
+                        border_style()
                     };
 
                     let widget = Paragraph::new(genre.name.as_str())
@@ -201,7 +199,7 @@ impl GenresState {
         let title = format!("← Back | {}", self.genres[self.selected_genre].name);
 
         let title_widget = Paragraph::new(title)
-            .style(Style::default().fg(Color::Cyan))
+            .style(title_style())
             .alignment(Alignment::Left);
 
         frame.render_widget(title_widget, chunks[0]);

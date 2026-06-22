@@ -6,7 +6,6 @@ use ratatui::{
     buffer::Buffer,
     crossterm::event::KeyCode,
     layout::{Constraint, Rect},
-    style::{Modifier, Stylize},
     text::Line,
     widgets::{Row, StatefulWidget, Table},
 };
@@ -16,7 +15,7 @@ use crate::{
     popup::{AlbumPopupState, Popup},
     ui::{
         COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_explicit_and_hifi,
-        mark_favorite,
+        mark_favorite, metadata_style, subtitle_style, title_style,
     },
 };
 
@@ -176,9 +175,9 @@ pub fn album_table<'a>(
                 mark_explicit_and_hifi(album.title.clone(), album.explicit, album.hires_available);
             Row::new(vec![
                 mark_favorite(title, favorite_albums.contains(&album.id)),
-                Line::from(album.artist.name.clone()),
-                Line::from(album.release_year.to_string()),
-                Line::from(format_duration(album.duration_seconds)),
+                Line::from(album.artist.name.clone()).style(subtitle_style()),
+                Line::from(album.release_year.to_string()).style(metadata_style()),
+                Line::from(format_duration(album.duration_seconds)).style(metadata_style()),
             ])
         })
         .collect();
@@ -201,8 +200,8 @@ pub fn album_table<'a>(
         .column_spacing(COLUMN_SPACING);
 
     if !is_empty {
-        table = table
-            .header(Row::new(["Title", "Artist", "Year", "Duration"]).add_modifier(Modifier::BOLD));
+        table =
+            table.header(Row::new(["Title", "Artist", "Year", "Duration"]).style(title_style()));
     }
 
     table

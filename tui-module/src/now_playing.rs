@@ -1,4 +1,7 @@
-use crate::ui::{HIGHLIGHT_TEXT_STYLE, block, format_mseconds, format_seconds};
+use crate::ui::{
+    HIGHLIGHT_TEXT_STYLE, block, body_style, format_mseconds, format_seconds, metadata_style,
+    subtitle_style, title_style,
+};
 use controls_module::{Status, models::Track};
 use ratatui::{prelude::*, widgets::*};
 use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
@@ -21,7 +24,7 @@ pub fn render(
     frame: &mut Frame,
     area: Rect,
     state: &mut NowPlayingState,
-    full_screen: bool,
+    _full_screen: bool,
     disable_tui_album_cover: bool,
 ) {
     let track = match &state.playing_track {
@@ -47,9 +50,7 @@ pub fn render(
             .split(block.inner(area)),
     };
 
-    if !full_screen {
-        frame.render_widget(block, area);
-    }
+    frame.render_widget(block, area);
 
     if let Some(image) = &mut state.image
         && !disable_tui_album_cover
@@ -66,20 +67,23 @@ pub fn render(
     let mut lines = vec![];
 
     if let Some(entity) = &state.entity_title {
-        lines.push(Line::from(entity.clone()).style(Style::new().bold()));
+        lines.push(Line::from(entity.clone()).style(title_style()));
     }
 
     if let Some(artist) = &track.artist_name {
-        lines.push(Line::from(artist.clone()));
+        lines.push(Line::from(artist.clone()).style(subtitle_style()));
     }
 
-    lines.push(Line::from(track.title.clone()));
+    lines.push(Line::from(track.title.clone()).style(body_style().add_modifier(Modifier::BOLD)));
 
-    lines.push(Line::from(format!(
-        "{} of {}",
-        state.tracklist_position + 1,
-        state.tracklist_length
-    )));
+    lines.push(
+        Line::from(format!(
+            "{} of {}",
+            state.tracklist_position + 1,
+            state.tracklist_length
+        ))
+        .style(metadata_style()),
+    );
 
     let duration = if state.duration_ms < track.duration_seconds * 1000 {
         state.duration_ms
@@ -113,7 +117,7 @@ pub fn render(
 
         let volume = Paragraph::new(format!("Vol {volume_percentage}%"))
             .alignment(Alignment::Right)
-            .style(Style::default().fg(Color::Cyan));
+            .style(HIGHLIGHT_TEXT_STYLE);
 
         frame.render_widget(volume, volume_area);
     }

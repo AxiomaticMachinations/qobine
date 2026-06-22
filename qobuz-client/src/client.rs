@@ -39,6 +39,15 @@ use stream_download::{Settings, StreamDownload, storage::temp::TempStorageProvid
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 const RNG_INIT: &str = "abb21364945c0583309667d13ca3d93a";
+const MAX_PAGE_SIZE: usize = 500;
+
+fn clamp_page_size(limit: usize) -> usize {
+    limit.min(MAX_PAGE_SIZE)
+}
+
+fn total_items(total: i64) -> usize {
+    usize::try_from(total.max(0)).unwrap_or(usize::MAX)
+}
 
 #[derive(Debug)]
 pub struct Client {
@@ -112,6 +121,7 @@ impl From<Option<i64>> for AudioQuality {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum ReleaseType {
     Albums,
     EPsAndSingles,
@@ -401,23 +411,66 @@ impl Client {
     }
 
     pub async fn user_playlists(&self) -> Result<UserPlaylistsResult> {
-        let endpoint = format!("{}{}", self.base_url, Endpoint::UserPlaylist);
-        let params = vec![("limit", "500"), ("extra", "tracks"), ("offset", "0")];
+        let mut playlists = self.user_playlists_page(MAX_PAGE_SIZE, 0).await?;
+        let total = total_items(playlists.playlists.total);
 
-        self.get(&endpoint, Some(&params)).await
+        while playlists.playlists.items.len() < total {
+            let offset = playlists.playlists.items.len();
+            let next_page = self.user_playlists_page(MAX_PAGE_SIZE, offset).await?;
+
+            if next_page.playlists.items.is_empty() {
+                break;
+            }
+
+            playlists.playlists.items.extend(next_page.playlists.items);
+        }
+
+        playlists.playlists.limit = playlists.playlists.items.len() as i64;
+        playlists.playlists.offset = 0;
+
+        Ok(playlists)
     }
 
     pub async fn playlist(&self, playlist_id: u32) -> Result<Playlist> {
-        let endpoint = format!("{}{}", self.base_url, Endpoint::Playlist);
-        let id_string = playlist_id.to_string();
-        let params = vec![
-            ("limit", "500"),
-            ("extra", "tracks"),
-            ("playlist_id", id_string.as_str()),
-            ("offset", "0"),
-        ];
+        let mut playlist = self.playlist_page(playlist_id, MAX_PAGE_SIZE, 0).await?;
+        let total = playlist
+            .tracks
+            .as_ref()
+            .map(|tracks| total_items(tracks.total))
+            .unwrap_or_default();
 
-        self.get(&endpoint, Some(&params)).await
+        while playlist
+            .tracks
+            .as_ref()
+            .is_some_and(|tracks| tracks.items.len() < total)
+        {
+            let offset = playlist
+                .tracks
+                .as_ref()
+                .map(|tracks| tracks.items.len())
+                .unwrap_or_default();
+            let next_page = self
+                .playlist_page(playlist_id, MAX_PAGE_SIZE, offset)
+                .await?;
+            let Some(mut next_tracks) = next_page.tracks else {
+                break;
+            };
+
+            if next_tracks.items.is_empty() {
+                break;
+            }
+
+            if let Some(tracks) = playlist.tracks.as_mut() {
+                tracks.items.append(&mut next_tracks.items);
+            }
+        }
+
+        if let Some(tracks) = playlist.tracks.as_mut() {
+            tracks.limit = tracks.items.len() as i64;
+            tracks.offset = 0;
+        }
+
+        Ok(playlist)
     }
 
     pub async fn create_playlist(
@@ -772,11 +825,81 @@ impl Client {
         Ok(SeekableStreamReader::new(download, content_length))
     }
 
-    pub async fn favorites(&self, limit: i32) -> Result<Favorites> {
-        let endpoint = format!("{}{}", self.base_url, Endpoint::Favorites);
+    pub async fn favorites_all(&self) -> Result<Favorites> {
+        self.favorites_paginated(None).await
+    }
 
-        let limit = limit.to_string();
-        let params = vec![("limit", limit.as_str())];
+    pub async fn favorites(&self, limit: i32) -> Result<Favorites> {
+        let Some(limit) = usize::try_from(limit).ok().filter(|limit| *limit > 0) else {
+            return Ok(Favorites::default());
+        };
+
+        self.favorites_paginated(Some(limit)).await
+    }
+
+    async fn favorites_paginated(&self, limit: Option<usize>) -> Result<Favorites> {
+        let page_size = clamp_page_size(limit.unwrap_or(MAX_PAGE_SIZE));
+        let mut offset = 0;
+        let mut favorites = Favorites::default();
+
+        loop {
+            let page = self.favorites_page(page_size, offset).await?;
+            let page_album_count = page.albums.items.len();
+            let page_artist_count = page.artists.items.len();
+            let page_track_count = page.tracks.items.len();
+
+            if offset == 0 {
+                favorites.albums.total = page.albums.total;
+                favorites.artists.total = page.artists.total;
+                favorites.tracks.total = page.tracks.total;
+            }
+
+            favorites.albums.items.extend(page.albums.items);
+            favorites.artists.items.extend(page.artists.items);
+            favorites.tracks.items.extend(page.tracks.items);
+
+            let album_target = limit
+                .map(|limit| limit.min(total_items(favorites.albums.total)))
+                .unwrap_or_else(|| total_items(favorites.albums.total));
+            let artist_target = limit
+                .map(|limit| limit.min(total_items(favorites.artists.total)))
+                .unwrap_or_else(|| total_items(favorites.artists.total));
+            let track_target = limit
+                .map(|limit| limit.min(total_items(favorites.tracks.total)))
+                .unwrap_or_else(|| total_items(favorites.tracks.total));
+
+            if favorites.albums.items.len() >= album_target
+                && favorites.artists.items.len() >= artist_target
+                && favorites.tracks.items.len() >= track_target
+            {
+                favorites.albums.items.truncate(album_target);
+                favorites.artists.items.truncate(artist_target);
+                favorites.tracks.items.truncate(track_target);
+                break;
+            }
+
+            if page_album_count == 0 && page_artist_count == 0 && page_track_count == 0 {
+                break;
+            }
+
+            offset += page_size;
+        }
+
+        favorites.albums.limit = favorites.albums.items.len() as i64;
+        favorites.albums.offset = 0;
+        favorites.artists.limit = favorites.artists.items.len() as i64;
+        favorites.artists.offset = 0;
+        favorites.tracks.limit = favorites.tracks.items.len() as i64;
+        favorites.tracks.offset = 0;
+
+        Ok(favorites)
+    }
+
+    async fn favorites_page(&self, limit: usize, offset: usize) -> Result<Favorites> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::Favorites);
+        let limit = clamp_page_size(limit).to_string();
+        let offset = offset.to_string();
+        let params = vec![("limit", limit.as_str()), ("offset", offset.as_str())];
 
         self.get(&endpoint, Some(&params)).await
     }
@@ -1038,17 +1161,95 @@ impl Client {
         release_type: ReleaseType,
         limit: Option<i32>,
     ) -> Result<ReleaseQuery> {
-        let endpoint = format!("{}{}", self.base_url, Endpoint::ArtistReleases);
-        let limit = limit.unwrap_or(100).to_string();
+        let requested_limit = limit
+            .map(|limit| usize::try_from(limit).ok().filter(|limit| *limit > 0))
+            .unwrap_or(Some(MAX_PAGE_SIZE));
+        let Some(requested_limit) = requested_limit else {
+            return Ok(ReleaseQuery::default());
+        };
 
+        let page_size = clamp_page_size(requested_limit);
+        let mut releases = self
+            .artist_releases_page(artist_id, release_type, page_size, 0)
+            .await?;
+        let mut has_more = releases.has_more();
+
+        while has_more && (limit.is_none() || releases.items.len() < requested_limit) {
+            let offset = releases.items.len();
+            let next_page = self
+                .artist_releases_page(artist_id, release_type, page_size, offset)
+                .await?;
+            has_more = next_page.has_more();
+
+            if next_page.items.is_empty() {
+                break;
+            }
+
+            releases.items.extend(next_page.items);
+        }
+
+        if limit.is_some() {
+            releases.items.truncate(requested_limit);
+        }
+
+        Ok(releases)
+    }
+
+    async fn user_playlists_page(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<UserPlaylistsResult> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::UserPlaylist);
+        let limit = clamp_page_size(limit).to_string();
+        let offset = offset.to_string();
+        let params = vec![
+            ("limit", limit.as_str()),
+            ("extra", "tracks"),
+            ("offset", offset.as_str()),
+        ];
+
+        self.get(&endpoint, Some(&params)).await
+    }
+
+    async fn playlist_page(
+        &self,
+        playlist_id: u32,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Playlist> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::Playlist);
+        let id_string = playlist_id.to_string();
+        let limit = clamp_page_size(limit).to_string();
+        let offset = offset.to_string();
+        let params = vec![
+            ("limit", limit.as_str()),
+            ("extra", "tracks"),
+            ("playlist_id", id_string.as_str()),
+            ("offset", offset.as_str()),
+        ];
+
+        self.get(&endpoint, Some(&params)).await
+    }
+
+    async fn artist_releases_page(
+        &self,
+        artist_id: u32,
+        release_type: ReleaseType,
+        limit: usize,
+        offset: usize,
+    ) -> Result<ReleaseQuery> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::ArtistReleases);
+        let limit = clamp_page_size(limit).to_string();
+        let offset = offset.to_string();
         let artistid_string = artist_id.to_string();
 
         let params = vec![
             ("artist_id", artistid_string.as_str()),
-            ("limit", &limit),
+            ("limit", limit.as_str()),
             ("release_type", release_type.as_str()),
             ("sort", "release_date"),
-            ("offset", "0"),
+            ("offset", offset.as_str()),
             ("track_size", "1"),
         ];
 

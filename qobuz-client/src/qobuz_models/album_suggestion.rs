@@ -37,6 +37,12 @@ pub struct ReleaseQuery {
     pub items: Vec<AlbumSuggestion>,
 }
 
+impl ReleaseQuery {
+    pub fn has_more(&self) -> bool {
+        self.has_more
+    }
+}
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PhysicalSupport {
     pub media_number: u32,

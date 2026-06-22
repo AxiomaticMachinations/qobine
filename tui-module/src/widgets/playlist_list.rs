@@ -4,7 +4,6 @@ use ratatui::{
     buffer::Buffer,
     crossterm::event::KeyCode,
     layout::{Constraint, Rect},
-    style::{Modifier, Stylize},
     text::Line,
     widgets::{Row, StatefulWidget, Table},
 };
@@ -12,7 +11,10 @@ use ratatui::{
 use crate::{
     app::{FilteredListState, NotificationList, Output},
     popup::{DeletePlaylistPopupState, NewPlaylistPopupState, PlaylistPopupState, Popup},
-    ui::{COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_as_owned},
+    ui::{
+        COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_as_owned,
+        metadata_style, title_style,
+    },
 };
 
 #[derive(Default)]
@@ -197,7 +199,7 @@ fn playlist_list<'a>(rows: &[PlaylistSimple], focus: bool) -> Table<'a> {
         .map(|playlist| {
             Row::new(vec![
                 mark_as_owned(playlist.title.clone(), playlist.is_owned),
-                Line::from(format_duration(playlist.duration_seconds)),
+                Line::from(format_duration(playlist.duration_seconds)).style(metadata_style()),
             ])
         })
         .collect();
@@ -215,7 +217,7 @@ fn playlist_list<'a>(rows: &[PlaylistSimple], focus: bool) -> Table<'a> {
         .column_spacing(COLUMN_SPACING);
 
     if !is_empty {
-        table = table.header(Row::new(["Title", "Duration"]).add_modifier(Modifier::BOLD));
+        table = table.header(Row::new(["Title", "Duration"]).style(title_style()));
     }
 
     table

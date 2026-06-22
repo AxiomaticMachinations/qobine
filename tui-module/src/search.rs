@@ -22,6 +22,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SearchFocus {
     #[default]
+    Idle,
     Sidebar,
     Content,
     Editing,
@@ -112,7 +113,40 @@ impl SearchState {
     ) -> AppResult<Output> {
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => match self.focus {
+                SearchFocus::Idle => match key_event.code {
+                    KeyCode::Tab => {
+                        self.focus = SearchFocus::Editing;
+                        Ok(Output::Consumed)
+                    }
+                    KeyCode::BackTab => {
+                        self.focus = SearchFocus::Content;
+                        Ok(Output::Consumed)
+                    }
+                    KeyCode::Char('e') => {
+                        self.focus_editing();
+                        Ok(Output::Consumed)
+                    }
+                    KeyCode::Up | KeyCode::Char('k') | KeyCode::Down | KeyCode::Char('j') => {
+                        self.focus = SearchFocus::Sidebar;
+                        Ok(Output::Consumed)
+                    }
+                    KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => {
+                        self.focus = SearchFocus::Content;
+                        Ok(Output::Consumed)
+                    }
+                    _ => Ok(Output::NotConsumed),
+                },
                 SearchFocus::Editing => match key_event.code {
+                    KeyCode::Tab => {
+                        self.focus = SearchFocus::Sidebar;
+                        self.update_search(client).await?;
+                        Ok(Output::Consumed)
+                    }
+                    KeyCode::BackTab => {
+                        self.focus = SearchFocus::Content;
+                        self.update_search(client).await?;
+                        Ok(Output::Consumed)
+                    }
                     KeyCode::Esc | KeyCode::Enter => {
                         self.focus = SearchFocus::Sidebar;
                         self.update_search(client).await?;
@@ -124,6 +158,14 @@ impl SearchState {
                     }
                 },
                 SearchFocus::Sidebar => match key_event.code {
+                    KeyCode::Tab => {
+                        self.focus = SearchFocus::Content;
+                        Ok(Output::Consumed)
+                    }
+                    KeyCode::BackTab => {
+                        self.focus = SearchFocus::Editing;
+                        Ok(Output::Consumed)
+                    }
                     KeyCode::Char('e') => {
                         self.focus_editing();
                         Ok(Output::Consumed)
@@ -143,6 +185,14 @@ impl SearchState {
                     _ => Ok(Output::NotConsumed),
                 },
                 SearchFocus::Content => match key_event.code {
+                    KeyCode::Tab => {
+                        self.focus = SearchFocus::Editing;
+                        Ok(Output::Consumed)
+                    }
+                    KeyCode::BackTab => {
+                        self.focus = SearchFocus::Sidebar;
+                        Ok(Output::Consumed)
+                    }
                     KeyCode::Char('e') => {
                         self.focus_editing();
                         Ok(Output::Consumed)

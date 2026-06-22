@@ -9,10 +9,50 @@ use crate::{
     now_playing::{self},
 };
 
-pub const HIGHLIGHT_STYLE: Style = Style::new().white().on_blue();
-pub const HIGHLIGHT_TEXT_STYLE: Style = Style::new().blue();
-pub const SELECTED_STYLE: Style = Style::new().fg(Color::Cyan);
+pub const HIGHLIGHT_STYLE: Style = Style::new()
+    .fg(Color::White)
+    .bg(Color::Red)
+    .add_modifier(Modifier::BOLD);
+pub const HIGHLIGHT_TEXT_STYLE: Style = Style::new().fg(Color::White).add_modifier(Modifier::BOLD);
+pub const SELECTED_STYLE: Style = Style::new()
+    .fg(Color::LightYellow)
+    .add_modifier(Modifier::BOLD);
 pub const COLUMN_SPACING: u16 = 2;
+const TAB_BAR_HEIGHT: u16 = 3;
+const NOW_PLAYING_HEIGHT: u16 = 10;
+const MIN_TAB_CONTENT_HEIGHT_WITH_NOW_PLAYING: u16 = 8;
+
+pub fn border_style() -> Style {
+    Style::default().fg(Color::Red).add_modifier(Modifier::DIM)
+}
+
+pub fn body_style() -> Style {
+    Style::default().fg(Color::LightBlue)
+}
+
+pub fn title_style() -> Style {
+    Style::default()
+        .fg(Color::LightRed)
+        .add_modifier(Modifier::BOLD)
+}
+
+pub fn subtitle_style() -> Style {
+    Style::default().fg(Color::Cyan)
+}
+
+pub fn metadata_style() -> Style {
+    Style::default().fg(Color::LightMagenta)
+}
+
+pub fn indicator_style() -> Style {
+    Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::DIM)
+}
+
+pub fn danger_style() -> Style {
+    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+}
 
 impl App {
     pub fn render(&mut self, frame: &mut Frame) {
@@ -41,7 +81,7 @@ impl App {
         let hide_album_cover = self.disable_tui_album_cover;
 
         if self.full_screen {
-            let area = center(area, Constraint::Percentage(80), Constraint::Length(10));
+            let area = fullscreen_area(area);
             now_playing::render(
                 frame,
                 area,
@@ -52,14 +92,25 @@ impl App {
             return;
         }
 
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(1),
-                Constraint::Length(10),
-            ])
-            .split(area);
+        let show_now_playing = self.now_playing.playing_track.is_some()
+            && area.height
+                >= TAB_BAR_HEIGHT + NOW_PLAYING_HEIGHT + MIN_TAB_CONTENT_HEIGHT_WITH_NOW_PLAYING;
+
+        let chunks = if show_now_playing {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(TAB_BAR_HEIGHT),
+                    Constraint::Min(1),
+                    Constraint::Length(NOW_PLAYING_HEIGHT),
+                ])
+                .split(area)
+        } else {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(TAB_BAR_HEIGHT), Constraint::Min(1)])
+                .split(area)
+        };
 
         let labels: Vec<String> = Tab::VALUES
             .iter()
@@ -80,7 +131,7 @@ impl App {
 
         frame.render_widget(tabs, chunks[0]);
 
-        if self.now_playing.playing_track.is_some() {
+        if show_now_playing {
             now_playing::render(
                 frame,
                 chunks[2],
@@ -90,11 +141,7 @@ impl App {
             );
         }
 
-        let tab_content_area = if self.now_playing.playing_track.is_some() {
-            chunks[1]
-        } else {
-            chunks[1].union(chunks[2])
-        };
+        let tab_content_area = chunks[1];
 
         let favorite_ids = &self.favorite_ids;
         match self.current_screen {
@@ -169,6 +216,35 @@ impl App {
             y += box_height;
         }
     }
+}
+
+fn fullscreen_area(area: Rect) -> Rect {
+    let max_width = area
+        .width
+        .saturating_sub(if area.width > 80 { 4 } else { 2 });
+    let max_height = area
+        .height
+        .saturating_sub(if area.height > 18 { 2 } else { 0 });
+
+    let width = if area.width <= 90 {
+        max_width
+    } else {
+        ((area.width as u32 * 3) / 4) as u16
+    }
+    .min(max_width)
+    .min(140)
+    .max(1);
+
+    let height = if area.height <= 18 {
+        max_height
+    } else {
+        ((area.height as u32 * 4) / 5) as u16
+    }
+    .min(max_height)
+    .min(28)
+    .max(1);
+
+    centered_rect_fixed(width, height, area)
 }
 
 pub fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {
@@ -339,7 +415,9 @@ pub fn render_input(input: &Input, editing: bool, area: Rect, frame: &mut Frame,
 pub fn block(title: Option<&str>) -> Block<'_> {
     let mut block = Block::bordered()
         .title_alignment(Alignment::Center)
-        .border_type(BorderType::Rounded);
+        .border_type(BorderType::Rounded)
+        .border_style(border_style())
+        .title_style(subtitle_style());
 
     if let Some(title) = title {
         block = block.title(format!(" {title} "));
@@ -350,6 +428,7 @@ pub fn block(title: Option<&str>) -> Block<'_> {
 
 pub fn basic_list_table<'a>(rows: Vec<Row<'a>>, focus: bool) -> Table<'a> {
     Table::new(rows, [Constraint::Min(1)])
+        .style(body_style())
         .row_highlight_style(if focus {
             HIGHLIGHT_STYLE
         } else {
@@ -361,6 +440,7 @@ pub fn basic_list_table<'a>(rows: Vec<Row<'a>>, focus: bool) -> Table<'a> {
 pub fn tab_bar<'a>(tabs: Vec<&'a str>, selected: usize) -> Tabs<'a> {
     Tabs::new(tabs)
         .not_underlined()
+        .style(body_style())
         .highlight_style(HIGHLIGHT_STYLE)
         .divider(symbols::line::VERTICAL)
         .select(selected)
@@ -377,11 +457,12 @@ pub fn sidebar<'a>(tabs: Vec<&'a str>, focused: bool) -> (List<'a>, u16) {
     };
 
     let border_style = match focused {
-        false => Style::default(),
-        true => Style::default().blue(),
+        false => border_style(),
+        true => Style::default().add_modifier(Modifier::BOLD),
     };
 
     let list = List::new(items)
+        .style(body_style())
         .block(
             Block::default()
                 .borders(Borders::RIGHT)
@@ -399,22 +480,16 @@ pub fn mark_explicit_and_hifi(
 ) -> Line<'static> {
     let mut parts: Vec<Span<'static>> = Vec::new();
 
-    parts.push(Span::raw(title));
+    parts.push(Span::styled(title, body_style()));
 
     if explicit {
         parts.push(Span::raw(" "));
-        parts.push(Span::styled(
-            "\u{f0b0c}",
-            Style::default().add_modifier(Modifier::DIM),
-        ));
+        parts.push(Span::styled("\u{f0b0c}", indicator_style()));
     }
 
     if hires_available {
         parts.push(Span::raw(" "));
-        parts.push(Span::styled(
-            "\u{f0435}",
-            Style::default().add_modifier(Modifier::DIM),
-        ));
+        parts.push(Span::styled("\u{f0435}", indicator_style()));
     }
 
     Line::from(parts)
@@ -427,24 +502,18 @@ pub fn mark_favorite(line: Line<'static>, is_favorite: bool) -> Line<'static> {
 
     let mut spans = line.spans;
     spans.push(Span::raw(" "));
-    spans.push(Span::styled(
-        "\u{f004}",
-        Style::default().add_modifier(Modifier::DIM),
-    ));
+    spans.push(Span::styled("\u{f004}", indicator_style()));
     Line::from(spans)
 }
 
 pub fn mark_as_owned(title: String, owned: bool) -> Line<'static> {
     let mut parts: Vec<Span<'static>> = Vec::new();
 
-    parts.push(Span::raw(title));
+    parts.push(Span::styled(title, body_style()));
 
     if owned {
         parts.push(Span::raw(" "));
-        parts.push(Span::styled(
-            "\u{f007}",
-            Style::default().add_modifier(Modifier::DIM),
-        ));
+        parts.push(Span::styled("\u{f007}", indicator_style()));
     }
 
     Line::from(parts)

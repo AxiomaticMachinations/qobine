@@ -15,7 +15,10 @@ use tui_input::backend::crossterm::EventHandler;
 
 use crate::{
     app::Output,
-    ui::{HIGHLIGHT_TEXT_STYLE, block},
+    ui::{
+        HIGHLIGHT_TEXT_STYLE, block, body_style, border_style, danger_style, metadata_style,
+        title_style,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -146,7 +149,7 @@ impl PreferencesState {
             exit_sender,
             audio_cache_ttl_sender,
             configuration,
-            focus: Some(PreferenceFocus::CacheDirectory),
+            focus: None,
             cache_path_input: Input::default().with_value(cache_path_value),
             cache_ttl_input: Input::default().with_value(cache_ttl_value),
             audio_quality,
@@ -197,7 +200,7 @@ impl PreferencesState {
         let style = if focused {
             HIGHLIGHT_TEXT_STYLE
         } else {
-            Style::default()
+            body_style()
         };
 
         let paragraph = Paragraph::new(self.cache_path_input.value())
@@ -205,6 +208,7 @@ impl PreferencesState {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
+                    .border_style(border_style())
                     .title("Cache directory"),
             );
 
@@ -224,7 +228,7 @@ impl PreferencesState {
         let style = if focused {
             HIGHLIGHT_TEXT_STYLE
         } else {
-            Style::default()
+            body_style()
         };
 
         let paragraph = Paragraph::new(format!("{} hours", self.cache_ttl_input.value()))
@@ -232,6 +236,7 @@ impl PreferencesState {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
+                    .border_style(border_style())
                     .title("Cache time to live"),
             );
 
@@ -251,7 +256,7 @@ impl PreferencesState {
         let style = if focused {
             HIGHLIGHT_TEXT_STYLE
         } else {
-            Style::default()
+            body_style()
         };
 
         let paragraph = Paragraph::new(format!("< {} >", self.audio_quality.to_label_str()))
@@ -259,6 +264,7 @@ impl PreferencesState {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
+                    .border_style(border_style())
                     .title("Audio quality"),
             );
 
@@ -271,7 +277,7 @@ impl PreferencesState {
         let style = if focused {
             HIGHLIGHT_TEXT_STYLE
         } else {
-            Style::default()
+            body_style()
         };
 
         let value = if self.use_file_based_streaming {
@@ -283,6 +289,7 @@ impl PreferencesState {
         let paragraph = Paragraph::new(format!("[ {} ]", value)).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_style(border_style())
                 .title("File based streaming"),
         );
 
@@ -295,7 +302,7 @@ impl PreferencesState {
         let style = if focused {
             HIGHLIGHT_TEXT_STYLE
         } else {
-            Style::default()
+            body_style()
         };
 
         let value = if self.auto_play {
@@ -307,6 +314,7 @@ impl PreferencesState {
         let paragraph = Paragraph::new(format!("[ {} ]", value)).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_style(border_style())
                 .title("Add similar tracks to empty queue"),
         );
 
@@ -326,17 +334,20 @@ impl PreferencesState {
         let mut style = if focused {
             HIGHLIGHT_TEXT_STYLE
         } else {
-            Style::default()
+            body_style()
         };
 
         if !self.disconnect_enabled {
             style = style.add_modifier(Modifier::DIM);
         }
 
-        let mut block = Block::default().borders(Borders::ALL).title(title);
+        let mut block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(border_style())
+            .title(title);
 
         if self.disconnect_enabled && Self::disconnect_field_error(input) {
-            block = block.border_style(Style::default().fg(Color::Red));
+            block = block.border_style(Style::default().add_modifier(Modifier::BOLD));
         }
 
         frame.render_widget(
@@ -372,9 +383,14 @@ impl PreferencesState {
             .style(if enabled_focus {
                 HIGHLIGHT_TEXT_STYLE
             } else {
-                Style::default()
+                body_style()
             })
-            .block(Block::default().borders(Borders::ALL).title("Disconnect")),
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(border_style())
+                    .title("Disconnect"),
+            ),
             rows[0],
         );
 
@@ -414,15 +430,20 @@ impl PreferencesState {
         let style = if focused {
             HIGHLIGHT_TEXT_STYLE.add_modifier(Modifier::BOLD)
         } else if self.has_unsaved_changes() {
-            Style::default().add_modifier(Modifier::BOLD)
+            title_style()
         } else {
-            Style::default().add_modifier(Modifier::DIM)
+            metadata_style()
         };
 
         let paragraph = Paragraph::new("Apply")
             .alignment(Alignment::Center)
             .style(style)
-            .block(Block::default().borders(Borders::ALL).title(title));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(border_style())
+                    .title(title),
+            );
 
         frame.render_widget(paragraph, area);
     }
@@ -433,13 +454,17 @@ impl PreferencesState {
         let style = if focused {
             HIGHLIGHT_TEXT_STYLE.add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Red)
+            danger_style()
         };
 
         let paragraph = Paragraph::new("Logout")
             .alignment(Alignment::Center)
             .style(style)
-            .block(Block::default().borders(Borders::ALL));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(border_style()),
+            );
 
         frame.render_widget(paragraph, area);
     }
@@ -453,16 +478,36 @@ impl PreferencesState {
     ) -> Output {
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                let focus = self.focus.unwrap_or_default();
-
                 match key_event.code {
+                    KeyCode::Tab => {
+                        self.focus = Some(match self.focus {
+                            Some(focus) => focus.next(),
+                            None => PreferenceFocus::CacheDirectory,
+                        });
+                        Output::Consumed
+                    }
+
+                    KeyCode::BackTab => {
+                        self.focus = Some(match self.focus {
+                            Some(focus) => focus.previous(),
+                            None => PreferenceFocus::Logout,
+                        });
+                        Output::Consumed
+                    }
+
                     KeyCode::Down => {
-                        self.focus = Some(focus.next());
+                        self.focus = Some(match self.focus {
+                            Some(focus) => focus.next(),
+                            None => PreferenceFocus::CacheDirectory,
+                        });
                         Output::Consumed
                     }
 
                     KeyCode::Up => {
-                        self.focus = Some(focus.previous());
+                        self.focus = Some(match self.focus {
+                            Some(focus) => focus.previous(),
+                            None => PreferenceFocus::CacheDirectory,
+                        });
                         Output::Consumed
                     }
 
@@ -490,54 +535,57 @@ impl PreferencesState {
                     | KeyCode::Delete
                     | KeyCode::Char(_)
                     | KeyCode::Home
-                    | KeyCode::End => match focus {
-                        PreferenceFocus::CacheDirectory => {
-                            self.cache_path_input.handle_event(&Event::Key(key_event));
-                            Output::Consumed
-                        }
+                    | KeyCode::End => match self.focus {
+                        Some(focus) => match focus {
+                            PreferenceFocus::CacheDirectory => {
+                                self.cache_path_input.handle_event(&Event::Key(key_event));
+                                Output::Consumed
+                            }
 
-                        PreferenceFocus::CacheTimeToLive => {
-                            match key_event.code {
-                                KeyCode::Char(c) if c.is_ascii_digit() => {
-                                    self.cache_ttl_input.handle_event(&Event::Key(key_event));
+                            PreferenceFocus::CacheTimeToLive => {
+                                match key_event.code {
+                                    KeyCode::Char(c) if c.is_ascii_digit() => {
+                                        self.cache_ttl_input.handle_event(&Event::Key(key_event));
+                                    }
+                                    KeyCode::Backspace
+                                    | KeyCode::Delete
+                                    | KeyCode::Home
+                                    | KeyCode::End => {
+                                        self.cache_ttl_input.handle_event(&Event::Key(key_event));
+                                    }
+                                    _ => {}
                                 }
-                                KeyCode::Backspace
-                                | KeyCode::Delete
-                                | KeyCode::Home
-                                | KeyCode::End => {
-                                    self.cache_ttl_input.handle_event(&Event::Key(key_event));
+
+                                Output::Consumed
+                            }
+
+                            PreferenceFocus::DisconnectServerUrl => {
+                                if self.disconnect_enabled {
+                                    self.disconnect_server_url
+                                        .handle_event(&Event::Key(key_event));
                                 }
-                                _ => {}
+                                Output::Consumed
                             }
 
-                            Output::Consumed
-                        }
-
-                        PreferenceFocus::DisconnectServerUrl => {
-                            if self.disconnect_enabled {
-                                self.disconnect_server_url
-                                    .handle_event(&Event::Key(key_event));
+                            PreferenceFocus::DisconnectPassword => {
+                                if self.disconnect_enabled {
+                                    self.disconnect_password
+                                        .handle_event(&Event::Key(key_event));
+                                }
+                                Output::Consumed
                             }
-                            Output::Consumed
-                        }
 
-                        PreferenceFocus::DisconnectPassword => {
-                            if self.disconnect_enabled {
-                                self.disconnect_password
-                                    .handle_event(&Event::Key(key_event));
+                            PreferenceFocus::DisconnectDeviceName => {
+                                if self.disconnect_enabled {
+                                    self.disconnect_device_name
+                                        .handle_event(&Event::Key(key_event));
+                                }
+                                Output::Consumed
                             }
-                            Output::Consumed
-                        }
 
-                        PreferenceFocus::DisconnectDeviceName => {
-                            if self.disconnect_enabled {
-                                self.disconnect_device_name
-                                    .handle_event(&Event::Key(key_event));
-                            }
-                            Output::Consumed
-                        }
-
-                        _ => Output::NotConsumed,
+                            _ => Output::NotConsumed,
+                        },
+                        None => Output::NotConsumed,
                     },
 
                     _ => Output::NotConsumed,
@@ -549,7 +597,11 @@ impl PreferencesState {
     }
 
     fn handle_left(&mut self) {
-        match self.focus.unwrap_or_default() {
+        let Some(focus) = self.focus else {
+            return;
+        };
+
+        match focus {
             PreferenceFocus::CacheTimeToLive => {
                 let current = self.parse_cache_ttl();
                 let new_hours = current.saturating_sub(1);
@@ -578,7 +630,11 @@ impl PreferencesState {
     }
 
     fn handle_right(&mut self) {
-        match self.focus.unwrap_or_default() {
+        let Some(focus) = self.focus else {
+            return;
+        };
+
+        match focus {
             PreferenceFocus::CacheTimeToLive => {
                 let current = self.parse_cache_ttl();
                 let new_hours = current.saturating_add(1);

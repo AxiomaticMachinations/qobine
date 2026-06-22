@@ -1,0 +1,1 @@
+ALTER TABLE configuration ADD COLUMN mini_player BOOLEAN NOT NULL DEFAULT 0;

@@ -14,8 +14,8 @@ use tui_input::{Input, backend::crossterm::EventHandler};
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
     ui::{
-        HIGHLIGHT_STYLE, block, center, centered_rect_fixed, format_seconds, mark_favorite,
-        render_input, tab_bar,
+        HIGHLIGHT_STYLE, block, center, centered_rect_fixed, format_seconds, indicator_style,
+        mark_favorite, metadata_style, render_input, subtitle_style, tab_bar, title_style,
     },
     widgets::{
         album_list::AlbumList,
@@ -284,12 +284,12 @@ impl AlbumPopupState {
 
     fn detail_lines(&self, is_favorite: bool, is_artist_favorite: bool) -> [Line<'static>; 3] {
         let title = mark_favorite(
-            Line::from(Span::styled(self.title.clone(), Style::new().bold())),
+            Line::from(Span::styled(self.title.clone(), title_style())),
             is_favorite,
         );
 
         let artist = mark_favorite(
-            Line::from(Span::from(self.artist.name.clone())),
+            Line::from(Span::styled(self.artist.name.clone(), subtitle_style())),
             is_artist_favorite,
         );
 
@@ -300,22 +300,22 @@ impl AlbumPopupState {
         parts.push(format!("{} tracks", self.total_tracks));
         parts.push(format_seconds(self.duration_seconds));
 
-        let mut info = vec![Span::styled(parts.join(" · "), Style::new().dim())];
+        let mut info = vec![Span::styled(parts.join(" · "), metadata_style())];
 
         if self.hires_available {
-            info.push(Span::styled(" · ", Style::new().dim()));
-            info.push(Span::styled("\u{f0435}", Style::new().dim()));
+            info.push(Span::styled(" · ", metadata_style()));
+            info.push(Span::styled("\u{f0435}", indicator_style()));
             if let (Some(bit_depth), Some(sampling_rate)) = (self.bit_depth, self.sampling_rate) {
                 info.push(Span::styled(
                     format!(" {bit_depth} bit - {sampling_rate}kHz"),
-                    Style::new().dim(),
+                    metadata_style(),
                 ));
             }
         }
 
         if self.explicit {
-            info.push(Span::styled(" · ", Style::new().dim()));
-            info.push(Span::styled("\u{f0b0c}", Style::new().dim()));
+            info.push(Span::styled(" · ", metadata_style()));
+            info.push(Span::styled("\u{f0b0c}", indicator_style()));
         }
 
         [title, artist, Line::from(info)]
@@ -1428,12 +1428,12 @@ fn render_track_info(
     let album_style = if selected == 0 {
         HIGHLIGHT_STYLE
     } else {
-        Style::new().white()
+        Style::default()
     };
     let artist_style = if selected == 1 {
         HIGHLIGHT_STYLE
     } else {
-        Style::new().white()
+        Style::default()
     };
     frame.render_widget(Paragraph::new("Go to Album").style(album_style), left[2]);
     frame.render_widget(Paragraph::new("Go to Artist").style(artist_style), left[3]);

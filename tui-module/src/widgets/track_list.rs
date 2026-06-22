@@ -6,7 +6,6 @@ use ratatui::{
     buffer::Buffer,
     crossterm::event::KeyCode,
     layout::{Constraint, Rect},
-    style::{Modifier, Stylize},
     text::Line,
     widgets::{Row, StatefulWidget, Table},
 };
@@ -16,7 +15,7 @@ use crate::{
     popup::Popup,
     ui::{
         COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_explicit_and_hifi,
-        mark_favorite,
+        mark_favorite, metadata_style, subtitle_style, title_style,
     },
 };
 
@@ -236,13 +235,18 @@ fn track_table<'a>(
                 mark_explicit_and_hifi(track.title.clone(), track.explicit, track.hires_available);
             cols.push(mark_favorite(title, favorite_tracks.contains(&track.id)));
 
-            cols.push(Line::from(track.artist_name.clone().unwrap_or_default()));
+            cols.push(
+                Line::from(track.artist_name.clone().unwrap_or_default()).style(subtitle_style()),
+            );
 
             if show_album {
-                cols.push(Line::from(track.album_title.clone().unwrap_or_default()));
+                cols.push(
+                    Line::from(track.album_title.clone().unwrap_or_default())
+                        .style(subtitle_style()),
+                );
             }
 
-            cols.push(Line::from(format_duration(track.duration_seconds)));
+            cols.push(Line::from(format_duration(track.duration_seconds)).style(metadata_style()));
 
             Row::new(cols)
         })
@@ -279,7 +283,7 @@ fn track_table<'a>(
         } else {
             Row::new(vec!["Title", "Artist", "Duration"])
         }
-        .add_modifier(Modifier::BOLD);
+        .style(title_style());
 
         table = table.header(header);
     }

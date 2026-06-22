@@ -14,7 +14,7 @@ use ratatui::{
 use crate::{
     app::{FavoriteAdd, FavoriteRemove, NotificationList, Output},
     popup::Popup,
-    ui::{basic_list_table, block, mark_explicit_and_hifi, mark_favorite},
+    ui::{basic_list_table, block, body_style, mark_explicit_and_hifi, mark_favorite},
 };
 
 pub struct QueueState {
@@ -36,12 +36,10 @@ impl QueueState {
                 .enumerate()
                 .map(|(index, track)| {
                     let style = match track.status {
-                        TrackStatus::Played => Style::default().add_modifier(Modifier::CROSSED_OUT),
-                        TrackStatus::Playing => Style::default().add_modifier(Modifier::BOLD),
-                        TrackStatus::Unplayed => Style::default(),
-                        TrackStatus::Unplayable => {
-                            Style::default().add_modifier(Modifier::CROSSED_OUT)
-                        }
+                        TrackStatus::Played => body_style().add_modifier(Modifier::CROSSED_OUT),
+                        TrackStatus::Playing => body_style().add_modifier(Modifier::BOLD),
+                        TrackStatus::Unplayed => body_style(),
+                        TrackStatus::Unplayable => body_style().add_modifier(Modifier::CROSSED_OUT),
                     };
 
                     let title = mark_favorite(
