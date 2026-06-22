@@ -30,21 +30,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 'latest'
-          cache: npm
-          cache-dependency-path: web-module/package-lock.json
-
-      - name: Web install dependencies 
-        working-directory: web-module
-        run: npm i
-
-      - name: Web format check
-        working-directory: web-module
-        run: npm run format:check
-
       - name: Check format
         run: cargo fmt --check
 

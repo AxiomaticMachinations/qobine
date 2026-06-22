@@ -12,15 +12,17 @@ The terminal ui needs a [nerdfont](https://www.nerdfonts.com/) to display icons 
 
 Download the tar.gz file for your supported OS from the releases page, extract the file and execute `qobuz-player` or copy it to your `$PATH`.
 
+### Run from a local checkout
+
+From the repository root:
+```
+./run-tui.sh
+```
+
 ### Installation with cargo
 Terminal app:
 ```
 cargo install --git https://github.com/SofusA/qobine tui-module
-```
-
-Web server app:
-```
-cargo install --git https://github.com/SofusA/qobine web-module
 ```
 
 ### Installation from the aur (unofficial)

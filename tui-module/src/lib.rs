@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use app::{App, get_current_state_without_image};
 use controls_module::{
-    ExitSender, PositionReceiver, StatusReceiver, TracklistReceiver, controls::Controls,
+    ExitSender, PositionReceiver, StatusReceiver, TracklistReceiver, VolumeReceiver,
+    controls::Controls,
 };
 use disconnect_module::DisconnectClientConfig;
 use favorites::FavoritesState;
@@ -36,6 +37,7 @@ pub async fn init(
     position_receiver: PositionReceiver,
     tracklist_receiver: TracklistReceiver,
     status_receiver: StatusReceiver,
+    volume_receiver: VolumeReceiver,
     exit_sender: ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
     disable_tui_album_cover: bool,
@@ -73,6 +75,7 @@ pub async fn init(
         position: position_receiver,
         tracklist: tracklist_receiver,
         status: status_receiver,
+        volume: volume_receiver,
         current_screen: Default::default(),
         exit: Default::default(),
         should_draw: true,

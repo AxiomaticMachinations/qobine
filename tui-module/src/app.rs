@@ -10,7 +10,7 @@ use crate::{
     ui::fetch_image,
 };
 use controls_module::{
-    PositionReceiver, Status, StatusReceiver, TracklistReceiver,
+    PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::Controls,
     models::{AlbumSimple, Artist, Track},
     tracklist::{Tracklist, TracklistType},
@@ -65,6 +65,7 @@ pub struct App {
     pub position: PositionReceiver,
     pub tracklist: TracklistReceiver,
     pub status: StatusReceiver,
+    pub volume: VolumeReceiver,
     pub current_screen: Tab,
     pub exit: bool,
     pub should_draw: bool,
@@ -222,6 +223,23 @@ where
 }
 
 impl App {
+    const VOLUME_STEP: f32 = 0.05;
+    const VOLUME_DISPLAY_DURATION: Duration = Duration::from_secs(2);
+
+    fn adjust_volume(&mut self, delta: f32) {
+        let current = *self.volume.borrow();
+        let new_volume = (current + delta).clamp(0.0, 1.0);
+
+        if (new_volume - current).abs() < f32::EPSILON {
+            return;
+        }
+
+        self.controls.set_volume(new_volume);
+        self.now_playing.volume_percentage = Some((new_volume * 100.0).round() as u32);
+        self.now_playing.volume_display_until =
+            Some(Instant::now() + Self::VOLUME_DISPLAY_DURATION);
+    }
+
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         let mut tick_interval = time::interval(Duration::from_millis(100));
         let mut receiver = self.broadcast.subscribe();
@@ -276,6 +294,8 @@ impl App {
                         self.current_image_url = image_url;
                     }
 
+                    new_state.volume_percentage = self.now_playing.volume_percentage;
+                    new_state.volume_display_until = self.now_playing.volume_display_until;
                     self.now_playing = new_state;
                     self.should_draw = true;
                 },
@@ -292,7 +312,13 @@ impl App {
                 }
 
                 _ = tick_interval.tick() => {
-                    // Tick is only used for notification cleanup
+                    if let Some(volume_display_until) = self.now_playing.volume_display_until
+                        && Instant::now() >= volume_display_until
+                    {
+                        self.now_playing.volume_percentage = None;
+                        self.now_playing.volume_display_until = None;
+                        self.should_draw = true;
+                    }
                 }
 
                 notification = receiver.recv() => {
@@ -548,6 +574,14 @@ impl App {
                 }
                 KeyCode::Char('b') => {
                     self.controls.jump_backward();
+                    self.should_draw = true;
+                }
+                KeyCode::Char('+') => {
+                    self.adjust_volume(Self::VOLUME_STEP);
+                    self.should_draw = true;
+                }
+                KeyCode::Char('-') => {
+                    self.adjust_volume(-Self::VOLUME_STEP);
                     self.should_draw = true;
                 }
                 KeyCode::Char('F') => {
@@ -836,6 +870,8 @@ pub fn get_current_state_without_image(
         status,
         tracklist_position: tracklist.current_position(),
         duration_ms: 0,
+        volume_percentage: None,
+        volume_display_until: None,
     };
 
     (state, image)

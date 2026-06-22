@@ -61,14 +61,6 @@ jobs:
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and upload qobuz-player-web
-        uses: taiki-e/upload-rust-binary-action@v1
-        with:
-          bin: qobuz-player-web
-          target: ${{ matrix.target }}
-          features: ${{ matrix.features || '' }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build and upload qobuz-player-rfid
         uses: taiki-e/upload-rust-binary-action@v1
         with:

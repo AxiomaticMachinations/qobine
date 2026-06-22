@@ -5,7 +5,7 @@ You can host the server yourself, or you can use my public at: https://qobine-di
 Please don't abuse it 😄 
 
 ## How to use:
-When running the web or rfid project provide the following flags:
+When running the rfid project provide the following flags:
 ```
       --disconnect-device-name <DISCONNECT_DEVICE_NAME>
           Disconnect device name
@@ -15,9 +15,9 @@ When running the web or rfid project provide the following flags:
           Disconnect server url
 ```
 
-eg: `web-module --disconnect-device-name livingroom --disconnect-password very-secret --disconnect-server-url https://qobine-disconnect.sofusconnect.addington.dk`
+eg: `qobuz-player-rfid --disconnect-device-name livingroom --disconnect-password very-secret --disconnect-server-url https://qobine-disconnect.sofusconnect.addington.dk`
 
-Now when you open the web ui, you will be able to see a music note icon, where you can select all running clients (web or rfid) with the same password.
+Running clients with the same password will be able to coordinate activation through the disconnect server.
 
 ## Why not Qobuz connect?
 Good question. 

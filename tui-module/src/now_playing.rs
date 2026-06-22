@@ -2,6 +2,7 @@ use crate::ui::{HIGHLIGHT_TEXT_STYLE, block, format_mseconds, format_seconds};
 use controls_module::{Status, models::Track};
 use ratatui::{prelude::*, widgets::*};
 use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
+use std::time::Instant;
 
 #[derive(Default)]
 pub struct NowPlayingState {
@@ -12,6 +13,8 @@ pub struct NowPlayingState {
     pub tracklist_position: usize,
     pub status: Status,
     pub duration_ms: u32,
+    pub volume_percentage: Option<u32>,
+    pub volume_display_until: Option<Instant>,
 }
 
 pub fn render(
@@ -99,6 +102,21 @@ pub fn render(
 
     frame.render_widget(gauge, info_chunks[1]);
     frame.render_widget(Text::from(lines), info_chunks[0]);
+
+    if let Some(volume_percentage) = state.volume_percentage {
+        let volume_area = Rect {
+            x: info_chunks[0].x,
+            y: info_chunks[0].y,
+            width: info_chunks[0].width,
+            height: 1,
+        };
+
+        let volume = Paragraph::new(format!("Vol {volume_percentage}%"))
+            .alignment(Alignment::Right)
+            .style(Style::default().fg(Color::Cyan));
+
+        frame.render_widget(volume, volume_area);
+    }
 }
 
 fn get_status(state: Status) -> String {

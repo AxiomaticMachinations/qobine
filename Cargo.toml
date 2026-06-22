@@ -1,7 +1,6 @@
 [workspace]
 members = [
   "controls-module",
-  "web-module",
   "mpris-module",
   "tui-module",
   "qobuz-client",
