@@ -856,7 +856,7 @@ pub fn get_current_state_without_image(
             (Some(tracklist.artist_name.clone()), track_image.cloned())
         }
         TracklistType::Tracks => (
-            track.as_ref().map(|x| x.title.clone()),
+            track.as_ref().and_then(|x| x.album_title.clone()),
             track_image.cloned(),
         ),
     };
