@@ -346,8 +346,8 @@ impl PreferencesState {
             .border_style(border_style())
             .title(title);
 
-        if self.disconnect_enabled && Self::disconnect_field_error(input) {
-            block = block.border_style(Style::default().add_modifier(Modifier::BOLD));
+        if self.disconnect_enabled && Self::disconnect_field_error(input) && !focused {
+            block = block.border_style(Style::default().fg(Color::Red));
         }
 
         frame.render_widget(
