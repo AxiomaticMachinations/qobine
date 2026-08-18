@@ -42,12 +42,14 @@ pub fn render(
         .map(|x| x as u16)
         .unwrap_or(0);
 
-    let chunks = match disable_tui_album_cover {
-        true => std::rc::Rc::new([block.inner(area)]),
-        false => Layout::default()
+    let chunks = if disable_tui_album_cover {
+        vec![block.inner(area)]
+    } else {
+        Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(length), Constraint::Min(1)])
-            .split(block.inner(area)),
+            .split(block.inner(area))
+            .to_vec()
     };
 
     frame.render_widget(block, area);
@@ -85,26 +87,35 @@ pub fn render(
         .style(metadata_style()),
     );
 
-    let duration = if state.duration_ms < track.duration_seconds * 1000 {
-        state.duration_ms
-    } else {
-        track.duration_seconds * 1000
-    };
+    let total_ms = track.duration_seconds.saturating_mul(1000);
+    let duration = state.duration_ms.min(total_ms);
 
     let ratio = duration as f64 / (track.duration_seconds * 1000) as f64;
 
-    let label = format!(
-        "{} / {}",
-        format_mseconds(state.duration_ms),
-        format_seconds(track.duration_seconds),
-    );
+    let progress_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(7),
+            Constraint::Min(1),
+            Constraint::Length(7),
+        ])
+        .split(info_chunks[1]);
 
-    let gauge = Gauge::default()
-        .ratio(ratio)
-        .gauge_style(HIGHLIGHT_TEXT_STYLE)
-        .label(label);
+    let current_time =
+        Paragraph::new(format_mseconds(state.duration_ms)).alignment(Alignment::Left);
 
-    frame.render_widget(gauge, info_chunks[1]);
+    let total_time =
+        Paragraph::new(format_seconds(track.duration_seconds)).alignment(Alignment::Right);
+
+    let gauge_width = progress_chunks[1].width as usize;
+
+    let gauge_str = smooth_gauge(ratio, gauge_width);
+
+    let gauge = Paragraph::new(gauge_str).style(HIGHLIGHT_TEXT_STYLE);
+
+    frame.render_widget(current_time, progress_chunks[0]);
+    frame.render_widget(gauge, progress_chunks[1]);
+    frame.render_widget(total_time, progress_chunks[2]);
     frame.render_widget(Text::from(lines), info_chunks[0]);
 
     if let Some(volume_percentage) = state.volume_percentage {
@@ -123,10 +134,36 @@ pub fn render(
     }
 }
 
-fn get_status(state: Status) -> String {
+fn get_status(state: Status) -> &'static str {
     match state {
-        Status::Playing => "Playing ⏵".to_string(),
-        Status::Paused => "Paused ⏸ ".to_string(),
-        Status::Buffering => "Buffering".to_string(),
+        Status::Playing => "Playing ⏵",
+        Status::Paused => "Paused ⏸",
+        Status::Buffering => "Buffering",
     }
+}
+
+fn smooth_gauge(ratio: f64, width: usize) -> String {
+    let blocks = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"];
+
+    let total = ratio * width as f64;
+    let full = total.floor() as usize;
+    let frac = ((total - full as f64) * 8.0).round() as usize;
+
+    let mut s = String::new();
+
+    for _ in 0..full {
+        s.push('█');
+    }
+
+    if full < width {
+        s.push_str(blocks[frac]);
+    }
+
+    let remaining = width.saturating_sub(full + 1);
+
+    for _ in 0..remaining {
+        s.push(' ');
+    }
+
+    s
 }

@@ -1,4 +1,4 @@
-# qobuz-player / qobine
+# qobine
 
 ## High resolution audio player backed by Qobuz
 
@@ -9,15 +9,18 @@ This is a mono repo for multiple third party apps for Qobuz.
 This includes a terminal app, a RFID player, and a minimal Qobuz Connect player.
 
 ### Terminal UI
-![TUI screenshot](/assets/qobuz-player.png)
+![TUI screenshot](/assets/qobine-tui.png)
+
 [More info](/tui-module)
 
 ### GNOME player
-![GTK screenshot](/assets/gtk-module.png)
+![GTK screenshot](/assets/qobine-gtk.png)
+
 [More info](/tui-module)
 
 ### RFID player
 ![RFID player](/assets/rfid-player.gif?raw=true)
+
 [More info](/rfid-module)
 
 ## Connect
@@ -25,6 +28,7 @@ This includes a terminal app, a RFID player, and a minimal Qobuz Connect player.
 There is initial support for Qobuz Connect in web, tui and rfid players, and a standalone minimal connect player.
 This can be enabled with the `--connect` flag.
 However this is currently very limited, experimental and full of bugs.
+
 [More info on Connect player](/connect-module)
 
 ### Qobine Disconnect
@@ -68,10 +72,10 @@ Linux dependencies: `alsa-sys-devel`, `just`, `sqlx-cli`.
 ## Get started
 Install your favorites app.
 
-Run `qobuz-player --help` or `qobuz-player <subcommand> --help` to see all available options.
+Run `--help` or `<subcommand> --help` to see all available options.
 
 ## Contribution
 Feature requests, issues and contributions are very welcome.
 
 ## Credits
-Qobuz-player started as a fork of [hifi.rs](https://github.com/iamdb/hifi.rs) but has since diverged. 
+Qobine started as a fork of [hifi.rs](https://github.com/iamdb/hifi.rs) but has since diverged. 
