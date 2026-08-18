@@ -1,5 +1,3 @@
-#[cfg(feature = "gpio")]
-use cli_module::GpioArgs;
 use cli_module::{
     ConnectNameArgs, DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_cache,
     default_audio_quality, error_exit, get_client, handle_shared_commands, spawn_clean_up,
@@ -21,10 +19,6 @@ struct Arguments {
 
     #[clap(flatten)]
     connect: ConnectNameArgs,
-
-    #[cfg(feature = "gpio")]
-    #[clap(flatten)]
-    gpio: GpioArgs,
 
     #[clap(subcommand)]
     command: Option<SharedCommands>,
@@ -75,17 +69,6 @@ pub async fn run() -> AppResult<()> {
         args.shared.output_device_id,
     )
     .await?;
-
-    #[cfg(feature = "gpio")]
-    if args.gpio.gpio {
-        let status_receiver = player.status();
-        let active_receiver = player.active();
-        tokio::spawn(async move {
-            if let Err(e) = gpio_module::init(status_receiver, active_receiver).await {
-                error_exit(e.into());
-            }
-        });
-    }
 
     {
         let app_id = client.app_id().await?;

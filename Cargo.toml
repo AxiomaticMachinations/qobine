@@ -4,13 +4,10 @@ members = [
   "mpris-module",
   "tui-module",
   "qobuz-client",
-  "gpio-module",
-  "rfid-module",
   "connect-module",
   "cli-module",
-  "gtk-module",
-  "disconnect-server-module",
   "disconnect-module",
+  "disconnect-server-module",
   "player-module"
 ]
 resolver = "2"
