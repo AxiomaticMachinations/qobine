@@ -169,10 +169,16 @@ impl Database {
     }
 
     pub async fn set_cache_directory(&self, directory: &Path) -> AppResult<()> {
+        tokio::fs::create_dir_all(directory)
+            .await
+            .map_err(|e| Error::StorageError {
+                error: format!("Unable to create directory: {e}"),
+            })?;
+
         let directory = directory
             .canonicalize()
             .map_err(|e| Error::StorageError {
-                error: e.to_string(),
+                error: format!("Unable to canonicalize: {e}"),
             })?
             .into_os_string()
             .into_string()
