@@ -21,6 +21,14 @@ struct Arguments {
     #[clap(long)]
     disable_album_cover: bool,
 
+    /// Also allow pasting the OAuth `code_autorisation` in the terminal
+    /// during first-run login, in case the automatic browser redirect to
+    /// http://localhost never reaches the app (e.g. no default browser
+    /// handler configured, or the redirect gets blocked). This otherwise
+    /// only happens for the standalone `login` subcommand.
+    #[clap(long)]
+    headless: bool,
+
     #[clap(flatten)]
     shared: SharedArgs,
 
@@ -44,7 +52,7 @@ async fn main() {
 pub async fn run() -> AppResult<()> {
     let args = Arguments::parse();
     let database = Arc::new(Database::new().await?);
-    let headless = false;
+    let headless = args.headless;
     let configuration = database.get_configuration().await?;
 
     if let Some(command) = args.command {
