@@ -6,6 +6,7 @@ pub mod client;
 pub mod database;
 mod downloader;
 pub mod error;
+pub mod mixes;
 pub mod notification;
 pub mod player;
 mod simple_cache;

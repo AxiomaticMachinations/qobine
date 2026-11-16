@@ -15,15 +15,26 @@ pub struct Album {
     pub maximum_sampling_rate: Option<f32>,
     pub id: String,
     pub image: Image,
+    #[serde(default)]
     pub parental_warning: bool,
     pub release_date_original: String,
     pub streamable: bool,
     pub title: String,
     pub tracks: Option<Tracks>,
+    #[serde(default)]
     pub tracks_count: i64,
     #[serde(default)]
     pub awards: Vec<Award>,
     pub label: Option<Label>,
+    #[serde(default)]
+    pub genre: Option<AlbumGenre>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AlbumGenre {
+    pub id: u32,
+    #[serde(default)]
+    pub name: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

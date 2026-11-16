@@ -25,3 +25,4 @@ dirs.workspace = true
 parking_lot.workspace = true
 libc.workspace = true
 futures.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["clock"] }

@@ -13,12 +13,15 @@ pub struct Tracks {
 pub struct Track {
     pub album: Option<Album>,
     pub duration: u32,
+    #[serde(default)]
     pub hires_streamable: bool,
     pub id: u32,
     pub performer: Option<Performer>,
     pub streamable: bool,
     pub title: String,
+    #[serde(default)]
     pub track_number: u32,
+    #[serde(default)]
     pub parental_warning: bool,
     pub playlist_track_id: Option<u64>,
     #[serde(default)]

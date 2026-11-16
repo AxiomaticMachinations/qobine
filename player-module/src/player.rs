@@ -24,6 +24,7 @@ use crate::{
     client::Client,
     database::Database,
     downloader::{DownloadResult, Downloader},
+    mixes::play_threshold_seconds,
     notification::{Notification, NotificationBroadcast},
     sink::{QueryTrackResult, Sink},
 };
@@ -45,6 +46,7 @@ pub struct Player {
     database: Arc<Database>,
     next_track_is_queried: bool,
     next_track_in_sink_queue: bool,
+    recorded_play: Option<(Option<u64>, u32)>,
     downloader: Downloader,
     state_change_delay: Option<Duration>,
     sample_rate_change_delay: Option<Duration>,
@@ -101,6 +103,7 @@ impl Player {
             database,
             next_track_in_sink_queue: false,
             next_track_is_queried: false,
+            recorded_play: None,
             downloader,
             state_change_delay,
             sample_rate_change_delay,
@@ -636,11 +639,18 @@ impl Player {
         let position = self.sink.position();
         self.position.send(position)?;
 
-        let duration = self
-            .tracklist_rx
-            .borrow()
-            .current_track()
-            .map(|x| x.duration_seconds);
+        let (duration, play_key) = {
+            let tracklist = self.tracklist_rx.borrow();
+            let current = tracklist.current_track();
+            (
+                current.map(|x| x.duration_seconds),
+                current.map(|x| (tracklist.current_queue_id(), x.id)),
+            )
+        };
+
+        if let (Some(duration), Some(play_key)) = (duration, play_key) {
+            self.record_play(play_key, duration, position.as_secs());
+        }
 
         if let Some(duration) = duration {
             let position = position.as_secs();
@@ -660,6 +670,35 @@ impl Player {
         }
 
         Ok(())
+    }
+
+    /// Stores a listened track in the history used to generate DailyQ.
+    fn record_play(&mut self, play_key: (Option<u64>, u32), duration: u32, position: u64) {
+        if position < 2 && self.recorded_play == Some(play_key) {
+            self.recorded_play = None;
+        }
+
+        if self.recorded_play == Some(play_key) || position < play_threshold_seconds(duration) {
+            return;
+        }
+
+        self.recorded_play = Some(play_key);
+
+        let client = self.client.clone();
+        let database = self.database.clone();
+        let track_id = play_key.1;
+
+        tokio::spawn(async move {
+            let played_at = time::OffsetDateTime::now_utc().unix_timestamp();
+            let result = match client.played_track_metadata(track_id).await {
+                Ok(played) => database.add_played_track(&played, played_at).await,
+                Err(err) => Err(err),
+            };
+
+            if let Err(err) = result {
+                tracing::warn!("Unable to record played track {track_id}: {err}");
+            }
+        });
     }
 
     async fn handle_message(&mut self, notification: ControlCommand) -> AppResult<()> {

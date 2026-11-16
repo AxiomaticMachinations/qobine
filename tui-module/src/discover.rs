@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use controls_module::controls::Controls;
 use futures::future::try_join_all;
 use player_module::AppResult;
 use player_module::client::{Client, GenrePlaylistSlug};
+use player_module::database::Database;
 use player_module::error::Error;
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
@@ -13,7 +16,7 @@ use crate::ui::sidebar;
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
     ui::block,
-    widgets::{album_list::AlbumList, playlist_list::PlaylistList},
+    widgets::{album_list::AlbumList, mix_list::MixList, playlist_list::PlaylistList},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -23,7 +26,10 @@ enum DiscoverFocus {
     Content,
 }
 
+const MIXES_LABEL: &str = "Your Mixes";
+
 pub struct DiscoverState {
+    mixes: MixList,
     featured_albums: Vec<(String, AlbumList)>,
     featured_playlists: Vec<(String, PlaylistList)>,
     selected_sub_tab: usize,
@@ -31,7 +37,7 @@ pub struct DiscoverState {
 }
 
 impl DiscoverState {
-    pub async fn new(client: &Client) -> AppResult<Self> {
+    pub async fn new(client: &Client, database: Arc<Database>) -> AppResult<Self> {
         let discover = client.discover_page(None).await?;
 
         let featured_albums = vec![
@@ -75,6 +81,7 @@ impl DiscoverState {
             .await?;
 
         Ok(Self {
+            mixes: MixList::new(database),
             featured_albums,
             featured_playlists,
             selected_sub_tab: 0,
@@ -88,10 +95,8 @@ impl DiscoverState {
 
         let tab_content_area = area.inner(Margin::new(1, 1));
 
-        let labels = self
-            .featured_albums
-            .iter()
-            .map(|(label, _)| label.as_str())
+        let labels = std::iter::once(MIXES_LABEL)
+            .chain(self.featured_albums.iter().map(|(label, _)| label.as_str()))
             .chain(
                 self.featured_playlists
                     .iter()
@@ -113,7 +118,10 @@ impl DiscoverState {
 
         let content_focused = self.focus == DiscoverFocus::Content;
 
-        if let Some((_, list)) = self.selected_album_mut() {
+        if self.selected_sub_tab == 0 {
+            self.mixes
+                .render(chunks[1], frame.buffer_mut(), content_focused);
+        } else if let Some((_, list)) = self.selected_album_mut() {
             list.render(
                 chunks[1],
                 frame.buffer_mut(),
@@ -171,6 +179,13 @@ impl DiscoverState {
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
+        if self.selected_sub_tab == 0 {
+            return self
+                .mixes
+                .handle_events(key_code, client, notifications)
+                .await;
+        }
+
         if let Some((_, list)) = self.selected_album_mut() {
             return list
                 .handle_events(key_code, client, controls, notifications)
@@ -187,19 +202,20 @@ impl DiscoverState {
     }
 
     fn selected_album_mut(&mut self) -> Option<&mut (String, AlbumList)> {
-        self.featured_albums.get_mut(self.selected_sub_tab)
+        let index = self.selected_sub_tab.checked_sub(1)?;
+        self.featured_albums.get_mut(index)
     }
 
     fn selected_playlist_mut(&mut self) -> Option<&mut (String, PlaylistList)> {
         let index = self
             .selected_sub_tab
-            .checked_sub(self.featured_albums.len())?;
+            .checked_sub(1 + self.featured_albums.len())?;
 
         self.featured_playlists.get_mut(index)
     }
 
     fn cycle_subtab_backwards(&mut self) {
-        let count = self.featured_albums.len() + self.featured_playlists.len();
+        let count = 1 + self.featured_albums.len() + self.featured_playlists.len();
 
         if count == 0 {
             return;
@@ -209,7 +225,7 @@ impl DiscoverState {
     }
 
     fn cycle_subtab(&mut self) {
-        let count = self.featured_albums.len() + self.featured_playlists.len();
+        let count = 1 + self.featured_albums.len() + self.featured_playlists.len();
 
         if count == 0 {
             return;

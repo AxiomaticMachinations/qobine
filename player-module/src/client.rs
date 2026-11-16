@@ -1,6 +1,10 @@
 use std::{path::PathBuf, sync::Mutex};
 
-use crate::database::Credentials;
+use crate::database::{Credentials, Database, PlayedTrack};
+use crate::mixes::{
+    DAILY_MIX_TITLE, EXCLUDED_GENRES, HISTORY_DAYS, MAX_SEED_TRACKS, MIN_GENRE_ARTISTS,
+    MIN_GENRE_TRACKS, MIN_MIX_SIZE, WEEKLY_MIX_TITLE, build_daily_mix,
+};
 use controls_module::models::{
     Album, AlbumSimple, Artist, ArtistPage, DiscoverPage, Favorites, Genre, Playlist,
     PlaylistSimple, SearchResults, Track,
@@ -11,11 +15,14 @@ use controls_module::models::{
     },
 };
 use moka::future::Cache;
+use qobuz_client::qobuz_models::track::{SuggestTrackInput, SuggestTrackRequest};
 use qobuz_client::{
     client::{AudioQuality, OAuthResult, ReleaseType, browser_oauth_login},
     qobuz_models::{TrackInfo, TrackUrl},
     stream::flac_source_stream::SeekableStreamReader,
 };
+use rand::seq::SliceRandom;
+use std::collections::HashSet;
 use time::Duration;
 use tokio::{
     sync::{OnceCell, RwLock},
@@ -395,6 +402,148 @@ impl Client {
         Ok(parse_track(suggestion, &audio_quality))
     }
 
+    pub async fn weekly_mix(&self) -> Result<Playlist> {
+        let client = self.get_client().await?;
+        let list = client.dynamic_tracks("weekly").await?;
+        let audio_quality = self.max_audio_quality.read().await;
+        let tracks = list
+            .tracks
+            .items
+            .into_iter()
+            .map(|track| parse_track(track, &audio_quality))
+            .collect();
+
+        Ok(mix_playlist(WEEKLY_MIX_TITLE, tracks))
+    }
+
+    /// Metadata needed to seed the daily mix from listening history.
+    pub async fn played_track_metadata(&self, id: u32) -> Result<PlayedTrack> {
+        let client = self.get_client().await?;
+        let track = client.track(id).await?;
+        let album = track.album.as_ref();
+
+        Ok(PlayedTrack {
+            track_id: track.id,
+            artist_id: album
+                .map(|album| album.artist.id as i64)
+                .or(track.performer.as_ref().map(|performer| performer.id)),
+            genre_id: album.and_then(|album| album.genre.as_ref().map(|genre| genre.id)),
+            label_id: album.and_then(|album| album.label.as_ref().map(|label| label.id)),
+        })
+    }
+
+    /// Returns today's DailyQ, generating (and storing) a new one once per day.
+    pub async fn daily_mix(&self, database: &Database) -> Result<Playlist> {
+        let today = chrono::Local::now().date_naive().to_string();
+        let previous = database.get_daily_mix().await?;
+
+        if let Some((day, tracks)) = &previous
+            && *day == today
+            && !tracks.is_empty()
+        {
+            return Ok(mix_playlist(DAILY_MIX_TITLE, tracks.clone()));
+        }
+
+        let previous_ids: HashSet<u32> = previous
+            .map(|(_, tracks)| tracks.iter().map(|t| t.id).collect())
+            .unwrap_or_default();
+
+        let since = time::OffsetDateTime::now_utc().unix_timestamp() - HISTORY_DAYS * 24 * 60 * 60;
+
+        let genre = database
+            .top_played_genres(since, MIN_GENRE_TRACKS, MIN_GENRE_ARTISTS)
+            .await?
+            .into_iter()
+            .find(|genre| !EXCLUDED_GENRES.contains(genre));
+
+        let mut seeds = match genre {
+            Some(genre) => database.played_tracks(since, Some(genre)).await?,
+            None => vec![],
+        };
+        seeds.retain(|seed| !previous_ids.contains(&seed.track_id));
+
+        if seeds.is_empty() {
+            seeds = database.played_tracks(since, None).await?;
+            seeds.retain(|seed| !previous_ids.contains(&seed.track_id));
+        }
+
+        if seeds.is_empty() {
+            let mut favorite_tracks = self.favorites().await?.tracks;
+            favorite_tracks.shuffle(&mut rand::rng());
+            seeds = favorite_tracks
+                .into_iter()
+                .filter(|track| !previous_ids.contains(&track.id))
+                .map(|track| PlayedTrack {
+                    track_id: track.id,
+                    artist_id: track.artist_id.map(i64::from),
+                    genre_id: None,
+                    label_id: None,
+                })
+                .collect();
+        }
+
+        seeds.truncate(MAX_SEED_TRACKS);
+
+        if seeds.is_empty() {
+            return Err(Error::Client {
+                message: "Not enough listening history for DailyQ yet".to_string(),
+            });
+        }
+
+        let listened_tracks_ids = seeds
+            .iter()
+            .map(|seed| seed.track_id)
+            .chain(previous_ids.iter().copied())
+            .collect();
+
+        let request = SuggestTrackRequest {
+            limit: 50 - seeds.len().min(10) as u32,
+            listened_tracks_ids,
+            track_to_analysed: seeds
+                .iter()
+                .map(|seed| SuggestTrackInput {
+                    track_id: seed.track_id,
+                    artist_id: seed.artist_id,
+                    genre_id: seed.genre_id,
+                    label_id: seed.label_id.map(|id| id as u32),
+                })
+                .collect(),
+        };
+
+        let suggestions = {
+            let client = self.get_client().await?;
+            client.dynamic_suggest(&request).await?
+        };
+        let suggestions: Vec<Track> = {
+            let audio_quality = self.max_audio_quality.read().await;
+            suggestions
+                .into_iter()
+                .map(|track| parse_track(track, &audio_quality))
+                .filter(|track| !previous_ids.contains(&track.id))
+                .collect()
+        };
+
+        let mut played: Vec<Track> =
+            futures::future::join_all(seeds.iter().map(|seed| self.track(seed.track_id)))
+                .await
+                .into_iter()
+                .filter_map(|track| track.ok())
+                .collect();
+        played.shuffle(&mut rand::rng());
+
+        let mix = build_daily_mix(played, suggestions);
+
+        if mix.len() < MIN_MIX_SIZE {
+            return Err(Error::Client {
+                message: "Not enough suggestions for DailyQ yet".to_string(),
+            });
+        }
+
+        database.set_daily_mix(&today, &mix).await?;
+
+        Ok(mix_playlist(DAILY_MIX_TITLE, mix))
+    }
+
     pub async fn playlist(&self, id: u32) -> Result<Playlist> {
         if let Some(cache) = self.playlist_cache.get(&id).await {
             return Ok(cache);
@@ -665,4 +814,16 @@ impl Client {
 pub struct GenrePlaylistSlug {
     pub genre_id: Option<u32>,
     pub playlist_slug: Option<String>,
+}
+
+fn mix_playlist(title: &str, tracks: Vec<Track>) -> Playlist {
+    Playlist {
+        is_owned: false,
+        title: title.to_string(),
+        duration_seconds: tracks.iter().map(|track| track.duration_seconds).sum(),
+        id: 0,
+        image: tracks.first().and_then(|track| track.image.clone()),
+        tracks,
+        owner: Default::default(),
+    }
 }

@@ -26,6 +26,7 @@ pub struct TrackList {
 
 pub enum TrackListEvent {
     Track,
+    Tracks(bool),
     Album(String),
     Playlist(u32, bool),
     Artist(u32),
@@ -208,6 +209,9 @@ impl TrackList {
                 match event_type {
                     TrackListEvent::Track => {
                         controls.play_tracks(self.items.filter().to_vec(), false, index);
+                    }
+                    TrackListEvent::Tracks(shuffle) => {
+                        controls.play_tracks(self.items.filter().to_vec(), shuffle, index);
                     }
                     TrackListEvent::Album(id) => controls.play_album(&id, index),
                     TrackListEvent::Playlist(id, shuffle) => {

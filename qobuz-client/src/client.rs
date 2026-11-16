@@ -7,6 +7,7 @@ use crate::{
         artist::ArtistsResponse,
         artist_page::ArtistPage,
         discover::Discover,
+        dynamic::{DynamicList, DynamicListInfo},
         favorites::Favorites,
         genre::{GenreFeaturedPlaylists, GenreResponse},
         playlist::{Playlist, UserPlaylistsResult},
@@ -169,6 +170,8 @@ enum Endpoint {
     GenrePlaylists,
     DiscoverIndex,
     Suggest,
+    DynamicTracksList,
+    DynamicTracksGet,
 }
 
 impl Display for Endpoint {
@@ -200,6 +203,8 @@ impl Display for Endpoint {
             Endpoint::GenrePlaylists => "discover/playlists",
             Endpoint::DiscoverIndex => "discover/index",
             Endpoint::Suggest => "dynamic/suggest",
+            Endpoint::DynamicTracksList => "dynamic-tracks/list",
+            Endpoint::DynamicTracksGet => "dynamic-tracks/get",
         };
 
         f.write_str(endpoint)
@@ -1052,6 +1057,56 @@ impl Client {
             .ok_or_else(|| Error::Api {
                 message: "No track suggestions returned".to_string(),
             })
+    }
+
+    pub async fn dynamic_suggest(&self, body: &SuggestTrackRequest) -> Result<Vec<Track>> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::Suggest);
+        let suggestions: TrackSuggestionResponse = self.post_json(&endpoint, body).await?;
+        Ok(suggestions.tracks.items)
+    }
+
+    pub async fn dynamic_tracks_list(&self) -> Result<Vec<DynamicListInfo>> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::DynamicTracksList);
+        self.get(&endpoint, None).await
+    }
+
+    pub async fn dynamic_tracks(&self, kind: &str) -> Result<DynamicList> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::DynamicTracksGet);
+        let limit = 50;
+        let mut offset = 0;
+        let mut list: Option<DynamicList> = None;
+
+        loop {
+            let limit_str = limit.to_string();
+            let offset_str = offset.to_string();
+            let params = vec![
+                ("type", kind),
+                ("limit", limit_str.as_str()),
+                ("offset", offset_str.as_str()),
+            ];
+            let page: DynamicList = self.get(&endpoint, Some(&params)).await?;
+            let page_len = page.tracks.items.len();
+            let total = page.track_count.unwrap_or(0) as usize;
+
+            let collected = match list.as_mut() {
+                Some(list) => {
+                    list.tracks.items.extend(page.tracks.items);
+                    list.tracks.items.len()
+                }
+                None => {
+                    let len = page_len;
+                    list = Some(page);
+                    len
+                }
+            };
+
+            if page_len == 0 || collected >= total || offset > 500 {
+                break;
+            }
+            offset = collected;
+        }
+
+        Ok(list.unwrap_or_default())
     }
 
     pub async fn artist(&self, artist_id: u32) -> Result<ArtistPage> {

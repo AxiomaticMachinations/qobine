@@ -1,4 +1,5 @@
 use crate::{AppResult, AudioQuality, Error};
+use controls_module::models::Track;
 use controls_module::tracklist::Tracklist;
 use qobuz_client::client::OAuthResult;
 use serde_json::to_string;
@@ -424,6 +425,118 @@ impl Database {
         .await
         .expect("infallible");
     }
+
+    pub async fn add_played_track(&self, played: &PlayedTrack, played_at: i64) -> AppResult<()> {
+        sqlx::query(
+            "insert into played_tracks (track_id, artist_id, genre_id, label_id, played_at) values (?, ?, ?, ?, ?)",
+        )
+        .bind(played.track_id as i64)
+        .bind(played.artist_id)
+        .bind(played.genre_id.map(|x| x as i64))
+        .bind(played.label_id)
+        .bind(played_at)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Genres ordered by how many distinct tracks were played since `since`,
+    /// keeping only genres with enough variety to seed a mix.
+    pub async fn top_played_genres(
+        &self,
+        since: i64,
+        min_tracks: i64,
+        min_artists: i64,
+    ) -> AppResult<Vec<u32>> {
+        let rows: Vec<(i64,)> = sqlx::query_as(
+            r#"
+                select genre_id from played_tracks
+                where played_at >= ? and genre_id is not null
+                group by genre_id
+                having count(distinct track_id) >= ? and count(distinct artist_id) >= ?
+                order by count(distinct track_id) desc, max(played_at) desc
+            "#,
+        )
+        .bind(since)
+        .bind(min_tracks)
+        .bind(min_artists)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|(id,)| id as u32).collect())
+    }
+
+    /// Distinct played tracks since `since`, optionally limited to one genre, in random order.
+    pub async fn played_tracks(
+        &self,
+        since: i64,
+        genre_id: Option<u32>,
+    ) -> AppResult<Vec<PlayedTrack>> {
+        let rows: Vec<PlayedTrackRow> = sqlx::query_as(
+            r#"
+                select track_id, max(artist_id), max(genre_id), max(label_id) from played_tracks
+                where played_at >= ? and (? is null or genre_id = ?)
+                group by track_id
+                order by random()
+            "#,
+        )
+        .bind(since)
+        .bind(genre_id.map(|x| x as i64))
+        .bind(genre_id.map(|x| x as i64))
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(track_id, artist_id, genre_id, label_id)| PlayedTrack {
+                track_id: track_id as u32,
+                artist_id,
+                genre_id: genre_id.map(|x| x as u32),
+                label_id,
+            })
+            .collect())
+    }
+
+    pub async fn get_daily_mix(&self) -> AppResult<Option<(String, Vec<Track>)>> {
+        let row: Option<(String, String)> =
+            sqlx::query_as("select day, tracks from daily_mix where id = 1")
+                .fetch_optional(&self.pool)
+                .await?;
+
+        Ok(row.and_then(|(day, tracks)| {
+            serde_json::from_str::<Vec<Track>>(&tracks)
+                .ok()
+                .map(|tracks| (day, tracks))
+        }))
+    }
+
+    pub async fn set_daily_mix(&self, day: &str, tracks: &[Track]) -> AppResult<()> {
+        let tracks = to_string(tracks)?;
+
+        sqlx::query(
+            r#"
+                insert into daily_mix (id, day, tracks) values (1, ?, ?)
+                on conflict(id) do update set day = excluded.day, tracks = excluded.tracks
+            "#,
+        )
+        .bind(day)
+        .bind(tracks)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
+type PlayedTrackRow = (i64, Option<i64>, Option<i64>, Option<i64>);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlayedTrack {
+    pub track_id: u32,
+    pub artist_id: Option<i64>,
+    pub genre_id: Option<u32>,
+    pub label_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -568,5 +681,55 @@ mod tests {
 
         assert_eq!(remaining, vec![new_path_str]);
         assert_eq!(deleted, vec![old_path]);
+    }
+
+    #[sqlx::test]
+    async fn played_tracks_and_daily_mix(pool: sqlx::Pool<sqlx::Sqlite>) {
+        let db = Database::init(pool).await.unwrap();
+
+        let play = |track_id, artist_id, genre_id| PlayedTrack {
+            track_id,
+            artist_id: Some(artist_id),
+            genre_id: Some(genre_id),
+            label_id: None,
+        };
+
+        for track_id in 0..5 {
+            db.add_played_track(&play(track_id, track_id as i64 % 2, 10), 100)
+                .await
+                .unwrap();
+        }
+        for track_id in 10..20 {
+            db.add_played_track(&play(track_id, 1, 20), 100)
+                .await
+                .unwrap();
+        }
+        db.add_played_track(&play(30, 1, 30), 100).await.unwrap();
+        db.add_played_track(&play(0, 0, 10), 10).await.unwrap();
+
+        assert_eq!(db.top_played_genres(50, 5, 2).await.unwrap(), vec![10]);
+        assert_eq!(db.top_played_genres(50, 5, 1).await.unwrap(), vec![20, 10]);
+
+        let mut genre_tracks: Vec<_> = db
+            .played_tracks(50, Some(10))
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|p| p.track_id)
+            .collect();
+        genre_tracks.sort();
+        assert_eq!(genre_tracks, vec![0, 1, 2, 3, 4]);
+
+        assert!(db.get_daily_mix().await.unwrap().is_none());
+        let mix = vec![Track {
+            id: 7,
+            ..Default::default()
+        }];
+        db.set_daily_mix("2026-01-01", &mix).await.unwrap();
+        db.set_daily_mix("2026-01-02", &mix).await.unwrap();
+        assert_eq!(
+            db.get_daily_mix().await.unwrap(),
+            Some(("2026-01-02".to_string(), mix))
+        );
     }
 }

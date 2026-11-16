@@ -425,6 +425,7 @@ pub struct PlaylistPopupState {
     title: String,
     id: u32,
     is_owned: bool,
+    is_mix: bool,
 }
 
 impl PlaylistPopupState {
@@ -435,6 +436,17 @@ impl PlaylistPopupState {
             shuffle: false,
             id: playlist.id,
             is_owned: playlist.is_owned,
+            is_mix: false,
+        }
+    }
+
+    /// A read-only generated mix (DailyQ/WeeklyQ), played from its track list
+    /// since it has no Qobuz playlist id.
+    pub fn new_mix(playlist: Playlist) -> Self {
+        Self {
+            is_owned: false,
+            is_mix: true,
+            ..Self::new(playlist)
         }
     }
 }
@@ -1099,10 +1111,14 @@ impl Popup {
                                 client,
                                 controls,
                                 notifications,
-                                TrackListEvent::Playlist(
-                                    playlist_popup_state.id,
-                                    playlist_popup_state.shuffle,
-                                ),
+                                if playlist_popup_state.is_mix {
+                                    TrackListEvent::Tracks(playlist_popup_state.shuffle)
+                                } else {
+                                    TrackListEvent::Playlist(
+                                        playlist_popup_state.id,
+                                        playlist_popup_state.shuffle,
+                                    )
+                                },
                             )
                             .await
                     }

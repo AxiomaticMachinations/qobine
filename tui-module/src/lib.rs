@@ -64,6 +64,7 @@ pub async fn init(
         get_current_state_without_image(&tracklist_value, status_value);
 
     let initial_configuration = database.get_configuration().await?;
+    let discover = discover::DiscoverState::new(&client, database.clone()).await?;
 
     let mut app = App {
         broadcast,
@@ -85,7 +86,7 @@ pub async fn init(
         favorites: FavoritesState::new(&client).await?,
         search: Default::default(),
         queue: QueueState::new(queue_tracks),
-        discover: discover::DiscoverState::new(&client).await?,
+        discover,
         genres: genres::GenresState::new(&client).await?,
         preferences: preferences::PreferencesState::new(
             exit_sender.clone(),
