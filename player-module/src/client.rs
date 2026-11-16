@@ -467,22 +467,28 @@ impl Client {
             seeds.retain(|seed| !previous_ids.contains(&seed.track_id));
         }
 
-        if seeds.is_empty() {
+        seeds.truncate(MAX_SEED_TRACKS);
+
+        // Top up thin listening history with liked tracks so a few plays don't dominate the mix.
+        if seeds.len() < MAX_SEED_TRACKS {
             let mut favorite_tracks = self.favorites().await?.tracks;
             favorite_tracks.shuffle(&mut rand::rng());
-            seeds = favorite_tracks
-                .into_iter()
-                .filter(|track| !previous_ids.contains(&track.id))
-                .map(|track| PlayedTrack {
-                    track_id: track.id,
-                    artist_id: track.artist_id.map(i64::from),
-                    genre_id: None,
-                    label_id: None,
-                })
-                .collect();
+            let seeded: HashSet<u32> = seeds.iter().map(|seed| seed.track_id).collect();
+            seeds.extend(
+                favorite_tracks
+                    .into_iter()
+                    .filter(|track| {
+                        !previous_ids.contains(&track.id) && !seeded.contains(&track.id)
+                    })
+                    .take(MAX_SEED_TRACKS - seeds.len())
+                    .map(|track| PlayedTrack {
+                        track_id: track.id,
+                        artist_id: track.artist_id.map(i64::from),
+                        genre_id: None,
+                        label_id: None,
+                    }),
+            );
         }
-
-        seeds.truncate(MAX_SEED_TRACKS);
 
         if seeds.is_empty() {
             return Err(Error::Client {
